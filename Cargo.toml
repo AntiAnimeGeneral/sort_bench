@@ -1,0 +1,13 @@
+[package]
+name = "sort_bench"
+version = "0.1.0"
+edition = "2021"
+
+[profile.bench]
+opt-level = 3
+
+[dependencies]
+cubecl = { git = "https://github.com/AntiAnimeGeneral/cubecl.git", branch = "radix_sort_v1", version = "*", features = [
+    "wgpu",
+    "cuda",
+] }
