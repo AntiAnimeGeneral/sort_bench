@@ -11,3 +11,5 @@ cubecl = { git = "https://github.com/AntiAnimeGeneral/cubecl.git", branch = "rad
     "wgpu",
     "cuda",
 ] }
+tokio = { version = "1.43.0", features = ["full"] }
+tokio-macros = "2.4.0"

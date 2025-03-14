@@ -19,7 +19,8 @@ use std::{mem, random::random, time::Duration, u32};
 
 use cubecl::{prelude::*, wgpu::WgpuDevice};
 
-fn main() {
+#[tokio::main]
+async fn main() {
     {
         let device = WgpuDevice::default();
         let client = WgpuRuntime::client(&device);
@@ -38,37 +39,37 @@ fn main() {
                 sort::radix_sort::<WgpuRuntime, u32>(
                     &client, len, &mut input, None,
                 )
+                .await
             });
         }
 
         println!("bench");
-        let sum = (0..100)
-            .map(|_| {
-                let vk = (0..len)
-                    .map(|_| random::<u32>())
-                    .collect::<Vec<_>>();
+        let mut sum = Duration::default();
+        for _ in 0..100 {
+            let vk =
+                (0..len).map(|_| random::<u32>()).collect::<Vec<_>>();
 
-                let mut input = client.create(u32::as_bytes(&vk));
-                let output =
-                    client.empty(len * mem::size_of::<u32>());
+            let buffer = client.empty(len * mem::size_of::<u32>());
+            let mut data;
 
-                let time = measure_time!({
-                    sort::radix_sort::<WgpuRuntime, u32>(
-                        &client,
-                        len,
-                        &mut input,
-                        Some(output),
-                    )
-                })
-                .1;
-                let trueoutput = &client.read_one(input.binding());
-                let input_ = u32::from_bytes(&trueoutput);
-                if !input_.is_sorted() {
-                    panic!("not sorted");
-                }
-                time
+            let trueoutput;
+            data = client.create(u32::as_bytes(&vk));
+            sum += measure_time!({
+                sort::radix_sort::<WgpuRuntime, u32>(
+                    &client,
+                    len,
+                    &mut data,
+                    Some(buffer),
+                )
+                .await;
             })
-            .sum::<Duration>();
+            .1;
+            trueoutput = client.read_one(data.binding());
+            let input_ = u32::from_bytes(&trueoutput);
+            if !input_.is_sorted() {
+                panic!("not sorted");
+            }
+        }
         println!("avg: {:?}", sum / 100);
     }
 }
