@@ -7,9 +7,6 @@ edition = "2021"
 opt-level = 3
 
 [dependencies]
-cubecl = { git = "https://github.com/AntiAnimeGeneral/cubecl.git", branch = "radix_sort_v1", version = "*", features = [
-    "wgpu",
-    "cuda",
-] }
+cubecl = { path = "../cubecl/crates/cubecl", features = ["wgpu"] }
 tokio = { version = "1.43.0", features = ["full"] }
-tokio-macros = "2.4.0"
+# tokio-macros = "2.4.0"

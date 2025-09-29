@@ -47,7 +47,8 @@ pub fn line_ffs(l: Line<u32>) -> u32 {
 #[cube]
 pub fn count_to_mask(count: u32) -> Line<u32> {
     let mut cnt = count;
-    let mut res = Line::empty(4).fill(0);
+    // let mut res = Line::empty(4u32).fill(0);
+    let mut res = Line::empty(4u32);
     for i in 0..4 {
         if cnt >= 32 {
             res[i] = 0xFF_FF_FF_FFu32;
@@ -55,7 +56,7 @@ pub fn count_to_mask(count: u32) -> Line<u32> {
             res[i] = (1 << cnt) - 1;
             break;
         }
-        cnt -= 32;
+        cnt -= 32u32;
     }
     res
 }
@@ -76,7 +77,7 @@ pub fn cube_ex_scan<N: Numeric>(
         wave_scan[UNIT_POS >> log_wave] = local + input;
     }
 
-    sync_units();
+    sync_cube();
 
     // comptime exp perhaps can eliminate branches
     if (min_wave_width >= comptime! {cube_size/min_wave_width})
@@ -95,7 +96,7 @@ pub fn cube_ex_scan<N: Numeric>(
                 wave_scan[UNIT_POS] = temp
             }
         }
-        sync_units();
+        sync_cube();
         local += wave_scan[UNIT_POS >> log_wave];
     } else {
         // for width < 16
@@ -114,7 +115,7 @@ pub fn cube_ex_scan<N: Numeric>(
                 wave_scan[UNIT_POS] = temp
             }
         }
-        sync_units();
+        sync_cube();
 
         let mut active = shared_use >> log_wave;
         let mut stride = PLANE_DIM;
@@ -132,7 +133,7 @@ pub fn cube_ex_scan<N: Numeric>(
                     wave_scan[idx] = temp;
                 }
             }
-            sync_units();
+            sync_cube();
             if plane_broadcast(UNIT_POS, 0) < active {
                 let idx = UNIT_POS & BitwiseNot::bitwise_not(stride_mask);
                 let cond = UNIT_POS < shared_use;
@@ -144,7 +145,7 @@ pub fn cube_ex_scan<N: Numeric>(
             active >>= log_wave;
             stride <<= log_wave;
             stride_mask = stride - 1;
-            sync_units();
+            sync_cube();
         }
         if (UNIT_POS >> log_wave) != 0 {
             local += wave_scan[UNIT_POS >> log_wave];
