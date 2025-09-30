@@ -1,8 +1,9 @@
-// use cubecl_core as cubecl;
-
 use core::mem;
+use std::thread::sleep;
 
 use cubecl::{frontend::Atomic, prelude::*, server::Handle};
+
+use crate::measure_time;
 
 use super::util::*;
 use super::*;
@@ -18,11 +19,10 @@ pub async fn radix_sort<R: Runtime, N: RadixSort + AsRadix>(
     data: &mut Handle,
     buffer: Option<Handle>,
 ) {
-    // let width = client.properties().hardware_properties().plane_size_min;
-    // let offset_align = client.properties().memory_properties().alignment as usize;
     let width = client.properties().hardware.plane_size_min;
     let offset_align = client.properties().memory.alignment as usize;
 
+    // only 256 now
     let block_size = 256;
     let radix = 256;
 
@@ -38,40 +38,75 @@ pub async fn radix_sort<R: Runtime, N: RadixSort + AsRadix>(
         let mut buffer = buffer.unwrap_or_else(|| client.empty(len * mem::size_of::<N>()));
 
         let global_histogram_handle = {
+            // let len = radix * (block_cnt as usize + 1) * mem::size_of::<u32>() * bytecnt;
             let len = radix * (block_cnt as usize + 1) * mem::size_of::<u32>() * bytecnt;
 
             let handle = client.empty(len);
-            let keys = 64;
+            let keys = 15;
             // must 0
-            memclean::launch::<R>(
-                client,
-                CubeCount::Static(len.div_ceil(1024 * keys) as u32, 1, 1),
-                CubeDim::new(1024, 1, 1),
-                ArrayArg::from_raw_parts::<u32>(&handle, len, 1),
-                keys as u32,
-            );
+            println!("mem clean:");
+            // client.sync().await;
+            // measure_time!({
+            //     memclean::launch::<R>(
+            //         client,
+            //         CubeCount::Static(1, 1, 1),
+            //         CubeDim::new(256, 1, 1),
+            //         // CubeCount::Static(len.div_ceil(256 * keys) as u32, 1, 1),
+            //         // CubeDim::new(256, 1, 1),
+            //         ArrayArg::from_raw_parts::<u32>(&handle, len, 1),
+            //         keys as u32,
+            //     );
+            //     client.sync().await;
+            // });
+            // println!("mem clean:");
+            client.sync().await;
+            // sleep(std::time::Duration::from_millis(10));
+            measure_time!({
+                memclean::launch::<R>(
+                    client,
+                    CubeCount::Static(len.div_ceil(1024 * keys) as u32, 1, 1),
+                    CubeDim::new(1024, 1, 1),
+                    // CubeCount::Static(len.div_ceil(256 * keys) as u32, 1, 1),
+                    // CubeDim::new(256, 1, 1),
+                    ArrayArg::from_raw_parts::<u32>(&handle, len, 1),
+                    keys as u32,
+                );
+                client.sync().await;
+            });
             handle
         };
 
-        global_histogram::launch::<N, R>(
-            client,
-            CubeCount::Static(block_cnt, 1, 1),
-            CubeDim::new(block_size, 1, 1),
-            ArrayArg::from_raw_parts::<N>(&data, len, 1),
-            ArrayArg::from_raw_parts::<Atomic<u32>>(&global_histogram_handle, radix * bytecnt, 1),
-            ScalarArg::new(block_cnt),
-            key_per_thread,
-        );
+        println!("global histogram:");
+        measure_time!({
+            global_histogram::launch::<N, R>(
+                client,
+                CubeCount::Static(block_cnt, 1, 1),
+                CubeDim::new(block_size, 1, 1),
+                ArrayArg::from_raw_parts::<N>(&data, len, 1),
+                ArrayArg::from_raw_parts::<Atomic<u32>>(
+                    &global_histogram_handle,
+                    radix * bytecnt,
+                    1,
+                ),
+                ScalarArg::new(block_cnt),
+                key_per_thread,
+            );
+            client.sync().await;
+        });
 
-        ex_scan::launch::<R>(
-            client,
-            CubeCount::Static(bytecnt as u32, 1, 1),
-            CubeDim::new(block_size, 1, 1),
-            ArrayArg::from_raw_parts::<u32>(&global_histogram_handle, radix * bytecnt, 1),
-            ScalarArg::new(block_cnt),
-            block_size,
-            width,
-        );
+        println!("exclusive scan:");
+        measure_time!({
+            ex_scan::launch::<R>(
+                client,
+                CubeCount::Static(bytecnt as u32, 1, 1),
+                CubeDim::new(block_size, 1, 1),
+                ArrayArg::from_raw_parts::<u32>(&global_histogram_handle, radix * bytecnt, 1),
+                ScalarArg::new(block_cnt),
+                block_size,
+                width,
+            );
+            client.sync().await;
+        });
 
         let index_handle = client.create(u32::as_bytes(&vec![
             0u32;
@@ -89,22 +124,26 @@ pub async fn radix_sort<R: Runtime, N: RadixSort + AsRadix>(
                 (i * (offset_align / size_of::<u32>()).max(1) * size_of::<u32>()) as u64,
             );
 
-            one_sweep::launch::<N, R>(
-                client,
-                CubeCount::Static(block_cnt, 1, 1),
-                CubeDim::new(block_size, 1, 1),
-                ArrayArg::from_raw_parts::<N>(&data, len, 1),
-                ArrayArg::from_raw_parts::<N>(&buffer, len, 1),
-                ArrayArg::from_raw_parts::<Atomic<u32>>(
-                    &global_histogram_handle,
-                    radix * bytecnt,
-                    1,
-                ),
-                ArrayArg::from_raw_parts::<N>(&index_handle, bytecnt, 1),
-                ScalarArg::new(i as u32 * 8),
-                width,
-                key_per_thread,
-            );
+            println!("  sweep byte {}/{}:", i + 1, bytecnt);
+            measure_time!({
+                one_sweep::launch::<N, R>(
+                    client,
+                    CubeCount::Static(block_cnt, 1, 1),
+                    CubeDim::new(block_size, 1, 1),
+                    ArrayArg::from_raw_parts::<N>(&data, len, 1),
+                    ArrayArg::from_raw_parts::<N>(&buffer, len, 1),
+                    ArrayArg::from_raw_parts::<Atomic<u32>>(
+                        &global_histogram_handle,
+                        radix * bytecnt,
+                        1,
+                    ),
+                    ArrayArg::from_raw_parts::<N>(&index_handle, bytecnt, 1),
+                    ScalarArg::new(i as u32 * 8),
+                    width,
+                    key_per_thread,
+                );
+                client.sync().await;
+            });
             (data, buffer) = (buffer, data);
         }
         data
@@ -219,6 +258,7 @@ impl<T: AsRadix> RadixSort for T {
             );
         }
     }
+
     fn one_sweep(
         input: &Array<T>,
         output: &mut Array<T>,

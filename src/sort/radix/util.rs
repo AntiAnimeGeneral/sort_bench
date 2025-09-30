@@ -1,5 +1,3 @@
-// use cubecl_core as cubecl;
-
 use cubecl::prelude::*;
 
 #[cube(launch)]
@@ -47,7 +45,6 @@ pub fn line_ffs(l: Line<u32>) -> u32 {
 #[cube]
 pub fn count_to_mask(count: u32) -> Line<u32> {
     let mut cnt = count;
-    // let mut res = Line::empty(4u32).fill(0);
     let mut res = Line::empty(4u32);
     for i in 0..4 {
         if cnt >= 32 {
